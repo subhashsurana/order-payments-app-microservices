@@ -1,8 +1,8 @@
-var amqp = require('../../lib/amqp');
-
-var dbEntityController = require('../controllers/dbEntityController');
-var constants = require('../helpers/constants');
-var dummyAuthToken = 'vb67asbBGhsafhDgsf6IkpNcAS22asd12418';
+const amqp = require('../../lib/amqp');
+const mongoose = require('mongoose');
+const Order = require("../models/order.models");
+const constants = require('../helpers/constants');
+const dummyAuthToken = 'vb67asbBGhsafhDgsf6IkpNcAS22asd12418';
 
 exports.init = () => {
     amqp.consume('orderCreated', newOrder => {
@@ -16,7 +16,7 @@ exports.init = () => {
 
     amqp.consume('orderConfirmed', async (message) => {
         var orderID = message.orderID;
-        console.log('amqp: order confirmed! Order ID: ', orderID);
+        console.log("amqp: order confirmed! Order ID: ",orderID);
         await updateOrderStatus(orderID, constants.ORDER_STATUS.CONFIRMED);
         setTimeout(async () => {
             await updateOrderStatus(orderID, constants.ORDER_STATUS.DELIVERED);
@@ -31,9 +31,16 @@ exports.init = () => {
 
 }
 
-    const updateOrderStatus = async (id, status) => {
-        await dbEntityController.update('order', { _status: status }, { id: id });
-}
+const updateOrderStatus = async (id, status) => {
+    const orderId = mongoose.Types.ObjectId(id);
+  if (orderId) {
+    await Order.updateOne({ _id: orderId }, { $set: { status: status } });
+  } else {
+    console.log("Invalid order details");
+  }
+};
+        
+
 
 
 

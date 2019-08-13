@@ -1,71 +1,81 @@
-var express = require('express');
+var express = require("express");
 var router = express.Router();
-var httpHelper = require('../helpers/http');
-var amqp = require('../../lib/amqp');
-var orderModel = require('../models/order.models');
-var dbEntityController = require('../controllers/dbEntityController');
-var constants = require('../helpers/constants');
-var mongodb = require('mongodb');
-
-var entity = 'order';
+const mongoose = require("mongoose");
+var Order = require("../models/order.models");
+var httpHelper = require("../helpers/http");
+var constants = require("../helpers/constants");
+var amqp = require("../../lib/amqp");
 
 const create = async (req, res) => {
-    try {
-        const order = req.body;
-        if (order) {
-            const newOrder = new orderModel(order.customerID, order.details);
-            const createdOrder = await dbEntityController.create(entity, newOrder);
-            newOrder.id = createdOrder.id;
+  const order = req.body;
+  try {
+    if (order) {
+      const newOrder = new Order({ ...order, customerID: req.body.customerID });
 
-            if (newOrder) {
-                await amqp.publish('orderCreated', newOrder);
-                httpHelper.res(res, createdOrder);
-            } else {
-                httpHelper.err(res, 'Invalid order');
-            }
-
-        } else {
-            httpHelper.err(res, 'Invalid order details');
-        }
-
-    } catch (err) {
-        httpHelper.err(res, err);
-
+      await newOrder.save();
+      if (newOrder) {
+        await amqp.publish("orderCreated", newOrder);
+        httpHelper.res(res, newOrder);
+      } else {
+        httpHelper.err(res, "Invalid order");
+      }
+    } else {
+      httpHelper.err(res, "Invalid order details");
     }
-}
+  } catch (err) {
+    httpHelper.err(res, err);
+  }
+};
 
 var cancel = async (req, res) => {
-    try {
-        var order = req.body;
-        if (order && order.id) {
-            await dbEntityController.update(entity,
-                { _status: constants.ORDER_STATUS.CANCELLED },
-                { id: order.id });
-            httpHelper.res(res, {});
-        } else {
-            httpHelper.err(res, 'Invalid order details');
-        }
-    } catch (err) {
-        httpHelper.err(res, err);
+  try {
+    const order = mongoose.Types.ObjectId(req.body.id);
+    if (order) {
+      let dbOrderStatus = await Order.findOne({ _id: order });
+      
+      if (!dbOrderStatus) {
+        return res.status(404).send("Invalid order requested");
+      }
+      if (dbOrderStatus.status === constants.ORDER_STATUS.CANCELLED) {
+        return res
+          .status(400)
+          .send("Order already cancelled.Please retry with different order");
+      }
+      let orderStatus = await Order.updateOne(
+        { _id: order },
+        { $set: { status: constants.ORDER_STATUS.CANCELLED } }
+      );
+      if (!orderStatus.nModified) {
+        return res.status(400).send("Order status not modified");
+      }
+      httpHelper.res(res, {});
+    } else {
+      httpHelper.err(res, "Invalid order details");
     }
-}
+  } catch (err) {
+    httpHelper.err(res, err);
+  }
+};
 
 var getStatus = async (req, res) => {
-    const _id = req.params.id;
-    try {
-        if (mongodb.ObjectID.isValid(_id)) {
-          var orders = await dbEntityController.find(entity, {_id });
-          httpHelper.res(res, { status: orders[0]._status });
-        } else {
-          httpHelper.err(res, "Invalid order details");
-        }
-    } catch (err) {
-        httpHelper.err(res, err);
+  const _id = req.params.id;
+  try {
+    if (mongoose.Types.ObjectId.isValid(_id)) {
+      const order = await Order.findOne({ _id });
+      if (!order) {
+        return res.status(404).send("Invalid order");
+      }
+      httpHelper.res(res, { status: order.status });
+    } else {
+      httpHelper.err(res, "Invalid order details");
     }
-}
+  } catch (err) {
+    httpHelper.err(res, err);
+  }
+};
 
-router.post('/create', create);
-router.post('/cancel', cancel);
-router.post('/status/:id', getStatus);
+router.post("/create", create);
+router.patch("/cancel", cancel);
+router.get("/status/:id", getStatus);
 
 module.exports = router;

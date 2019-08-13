@@ -6,7 +6,7 @@ amqp.consume('processPayment', message => {
     if (authenticate(message.token)) {
         processPayment(message.order);
     } else {
-        declineOrder(message.order.id, 'auth failed.');
+        declineOrder(message.order._id, 'auth failed.');
     }
 });
 
@@ -37,9 +37,9 @@ function getRandomNo(min, max) {
 const processPayment = order => {
     if (isValidOrder()) {
         //payment processing logic
-        confirmOrder(order.id);
+        confirmOrder(order._id);
     } else {
-        declineOrder(order.id, 'order validation failed.');
+        declineOrder(order._id, 'order validation failed.');
     }
 }
 
